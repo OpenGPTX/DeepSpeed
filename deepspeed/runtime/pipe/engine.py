@@ -254,7 +254,7 @@ class PipelineEngine(DeepSpeedEngine):
                     self._bf16_reduce_grads()
                 else:
                     assert self.zero_optimization_stage() == 1, "only bf16 + z1 are supported"
-                    raise NotImplementedError()
+                    self.allreduce_gradients(bucket_size=MEMORY_OPT_ALLREDUCE_SIZE)
             else:
                 self.allreduce_gradients(bucket_size=MEMORY_OPT_ALLREDUCE_SIZE)
         self._force_grad_boundary = False
