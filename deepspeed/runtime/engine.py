@@ -92,7 +92,7 @@ from deepspeed.runtime.checkpoint_engine.torch_checkpoint_engine import (
 
 from .pipe.module import PipelineModule
 from .utils import ensure_directory_exists, get_ma_status
-from ..ops.op_builder import UtilsBuilder
+from op_builder import UtilsBuilder
 from ..ops.adam import FusedAdam
 from ..moe.sharded_moe import TopKGate, MOELayer
 from ..moe.layer import MoE

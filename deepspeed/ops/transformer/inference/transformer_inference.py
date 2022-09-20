@@ -5,7 +5,7 @@ import json
 import math
 import torch
 from torch.autograd import Function
-from ... import op_builder
+import op_builder
 import torch.nn as nn
 from deepspeed import comm as dist
 from deepspeed.utils.logging import log_dist

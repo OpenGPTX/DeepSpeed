@@ -19,7 +19,7 @@ from deepspeed.runtime.utils import (bwc_tensor_model_parallel_rank,
 from deepspeed.runtime.zero.config import ZeroStageEnum
 from deepspeed.runtime.zero.offload_config import OffloadDeviceEnum
 from deepspeed.ops.adam import DeepSpeedCPUAdam
-from deepspeed.ops.op_builder import UtilsBuilder
+from op_builder import UtilsBuilder
 from deepspeed.utils import logger
 from deepspeed.moe.utils import is_moe_param
 from deepspeed.git_version_info import version

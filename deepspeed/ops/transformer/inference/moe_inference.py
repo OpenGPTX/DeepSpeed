@@ -5,7 +5,7 @@ import json
 import math
 import torch
 from torch.autograd import Function
-from ... import op_builder
+import op_builder
 #from ...inference.engine import inference_cuda_module, specialized_mode
 # Cuda modules will be imported if needed
 inference_cuda_module = None
