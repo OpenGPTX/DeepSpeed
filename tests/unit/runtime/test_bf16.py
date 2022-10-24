@@ -4,7 +4,7 @@ import pytest
 from deepspeed.ops.adam import FusedAdam
 from tests.unit.common import DistributedTest
 from deepspeed.ops.op_builder import CPUAdamBuilder
-from tests.unit.simple_model import SimpleModel, SimpleOptimizer, random_dataloader
+from tests.unit.simple_model import SimpleModel, SimpleOptimizer, random_dataloader, LinearStackPipe
 from tests.unit.util import bf16_required_version_check
 from deepspeed import comm as dist
 
@@ -29,6 +29,7 @@ class TestAdamBF16ZeroOneCycleCompatibility(DistributedTest):
                     "lr": 0.00015
                 }
             },
+            "train_micro_batch_size_per_gpu": 1,
             "scheduler": {
                 "type": "OneCycle",
                 "params": {
@@ -58,8 +59,8 @@ class TestAdamBF16ZeroOneCycleCompatibility(DistributedTest):
         hidden_dim = 10
         model = SimpleModel(hidden_dim)
         model, _, _, _ = deepspeed.initialize(config=config_dict,
-                                             model=model,
-                                             model_parameters=model.parameters())
+                                              model=model,
+                                              model_parameters=model.parameters())
         data_loader = random_dataloader(model=model,
                                         total_samples=50,
                                         hidden_dim=hidden_dim,
@@ -353,3 +354,44 @@ class TestZeroDtypeCocktail(DistributedTest):
             model.backward(loss)
             model.step()
         dist.reduce = orig_torch_reduce
+
+
+class TestBF16Training(DistributedTest):
+    def set_up(self):
+        config_dict = {
+            "train_batch_size": 2,
+            "steps_per_print": 1,
+            "bf16": {
+                "enabled": True
+            },
+            "zero_optimization": {
+                "stage": 0
+            },
+            "communication_data_type": "fp32"
+        }
+
+        input_dim = 1
+        hidden_dim = 10
+        output_dim = 10
+        num_layers = 4
+        num_stages = 2
+
+        model = LinearStackPipe(
+            input_dim=input_dim,
+            hidden_dim=hidden_dim,
+            output_dim=output_dim,
+            num_layers=num_layers,
+            num_stages=num_stages,
+        )
+        optimizer = torch.optim.Adam(model.parameters())
+        model, _, _, _ = deepspeed.initialize(config=config_dict,
+                                              model=model,
+                                              optimizer=optimizer)
+        data_loader = random_dataloader(model=model,
+                                        total_samples=2,
+                                        hidden_dim=hidden_dim,
+                                        device=model.device,
+                                        dtype="fp32")
+
+    def test_communication_data_type(self):
+        self.set_up()
