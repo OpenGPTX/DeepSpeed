@@ -357,6 +357,8 @@ class TestZeroDtypeCocktail(DistributedTest):
 
 
 class TestBF16Training(DistributedTest):
+
+    #TODO: Use @pytest.fixture
     def set_up(self):
         config_dict = {
             "train_batch_size": 2,
@@ -376,22 +378,29 @@ class TestBF16Training(DistributedTest):
         num_layers = 4
         num_stages = 2
 
-        model = LinearStackPipe(
+        pipe_model = LinearStackPipe(
             input_dim=input_dim,
             hidden_dim=hidden_dim,
             output_dim=output_dim,
             num_layers=num_layers,
             num_stages=num_stages,
         )
-        optimizer = torch.optim.Adam(model.parameters())
-        model, _, _, _ = deepspeed.initialize(config=config_dict,
-                                              model=model,
-                                              optimizer=optimizer)
-        data_loader = random_dataloader(model=model,
-                                        total_samples=2,
-                                        hidden_dim=hidden_dim,
-                                        device=model.device,
-                                        dtype="fp32")
+        optimizer = torch.optim.Adam(pipe_model.parameters())
+        deepspeed_model, _, _, _ = deepspeed.initialize(
+            config=config_dict,
+            model=pipe_model,
+            optimizer=optimizer,
+        )
+
+        self.model = deepspeed_model
+
+    def test_parameter_type(self):
+        self.set_up()
+        params = list(self.model.parameters())
+
+        for p in params:
+            assert (p.dtype == torch.bfloat16)
 
     def test_communication_data_type(self):
         self.set_up()
+        assert (self.model.communication_data_type == torch.float32)
