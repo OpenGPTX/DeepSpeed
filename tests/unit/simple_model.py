@@ -3,7 +3,7 @@ import json
 import argparse
 import torch
 
-from deepspeed.pipe import PipelineModule, LayerSpec
+from deepspeed.pipe import PipelineModule, LayerSpec, TiedLayerSpec
 from deepspeed.moe.layer import MoE
 
 import deepspeed.comm as dist
@@ -146,6 +146,36 @@ class LinearStackPipe(PipelineModule):
                           self.hidden_dim,
                           bias=False))
             layers.append(lambda x: x)
+        layers.append(LayerSpec(torch.nn.Linear, self.hidden_dim, self.output_dim))
+
+        super().__init__(layers=layers, loss_fn=torch.nn.CrossEntropyLoss(), **kwargs)
+
+
+class TiedLinearStackPipe(PipelineModule):
+    def __init__(self,
+                 input_dim=128,
+                 hidden_dim=128,
+                 output_dim=128,
+                 num_layers=4,
+                 **kwargs):
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+
+        layers = []
+
+        layers.append(LayerSpec(torch.nn.Linear, self.input_dim, self.hidden_dim))
+        layers.append(
+            TiedLayerSpec("tied", torch.nn.Linear, self.hidden_dim, self.hidden_dim, tied_weight_attr='weight'))
+        for x in range(self.num_layers):
+            layers.append(
+                LayerSpec(torch.nn.Linear,
+                          self.hidden_dim,
+                          self.hidden_dim,
+                          bias=False))
+            layers.append(lambda x: x)
+        layers.append(TiedLayerSpec("tied", torch.nn.Linear, self.hidden_dim, self.hidden_dim, tied_weight_attr='weight'))
         layers.append(LayerSpec(torch.nn.Linear, self.hidden_dim, self.output_dim))
 
         super().__init__(layers=layers, loss_fn=torch.nn.CrossEntropyLoss(), **kwargs)
