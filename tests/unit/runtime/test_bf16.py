@@ -360,8 +360,8 @@ class TestZeroDtypeCocktail(DistributedTest):
 
 class TestBF16Training(DistributedTest):
 
-    #TODO: Use @pytest.fixture
-    def set_up(self):
+    # TODO: Use @pytest.fixture
+    def set_up(self, zero_stage: int):
         config_dict = {
             "train_batch_size": 2,
             "steps_per_print": 1,
@@ -369,7 +369,7 @@ class TestBF16Training(DistributedTest):
                 "enabled": True
             },
             "zero_optimization": {
-                "stage": 0
+                "stage": zero_stage,
             },
             "communication_data_type": "fp32"
         }
@@ -438,15 +438,24 @@ class TestBF16Training(DistributedTest):
         self.tied_model = deepspeed_model
         self.tied_model.set_dataloader(self.data_loader)
 
-    def test_parameter_type(self):
-        self.set_up()
+
+    def _check_params(self):
         params = list(self.model.parameters())
 
         for p in params:
             assert (p.dtype == torch.bfloat16)
 
+    def test_parameter_type(self):
+        self.set_up(zero_stage=0)
+        self._check_params()
+        self.set_up(zero_stage=1)
+        self._check_params()
+
     def test_communication_data_type(self):
-        self.set_up()
+        self.set_up(zero_stage=0)
+        assert (self.model.communication_data_type == torch.float32)
+
+        self.set_up(zero_stage=1)
         assert (self.model.communication_data_type == torch.float32)
 
     def test__exec_reduce_tied_grads(self):
