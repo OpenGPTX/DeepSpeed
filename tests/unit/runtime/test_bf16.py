@@ -396,16 +396,17 @@ class TestBF16Training(DistributedTest):
 
         self.model = deepspeed_model
 
-    def set_up_tied_model(self, zero_stage: int):
+    def set_up_tied_model(self, zero_stage: int, enable_bf16: bool):
         config_dict = {
             "train_batch_size": 2,
             "steps_per_print": 1,
             "bf16": {
-                "enabled": True
+                "enabled": enable_bf16,
             },
             "zero_optimization": {
                 "stage": zero_stage
             },
+            # TODO: check where defined
             "communication_data_type": "fp32"
         }
 
@@ -458,8 +459,7 @@ class TestBF16Training(DistributedTest):
         assert (self.model.communication_data_type == torch.float32)
 
     def test__exec_reduce_tied_grads(self):
-        # self.set_up_tied_model(1)
-        self.set_up_tied_model(1)
+        self.set_up_tied_model(zero_stage=1, enable_bf16=1)
         for n, batch in enumerate(self.data_loader):
             self.tied_model.module.train()
             self.tied_model.total_loss = None
@@ -500,8 +500,7 @@ class TestBF16Training(DistributedTest):
                         self.tied_model._exec_instr(**cmd.kwargs)
             break
 
-    def test__exec_backward_pass(self):
-        self.set_up_tied_model(0)
+    def _execute_instructions(self):
         for n, batch in enumerate(self.data_loader):
             self.tied_model.module.train()
             self.tied_model.total_loss = None
@@ -532,12 +531,18 @@ class TestBF16Training(DistributedTest):
                     if type(cmd) == schedule.BackwardPass:
                         # check the gradient data types before and after executing ReduceTiedGrads
                         # during the execution it is not possible to access the gradients
-                        self.tied_model._exec_instr(**cmd.kwargs)
-                        if not self.tied_model.is_last_stage():
-                            for group in self.tied_model.optimizer.bf16_groups:
-                                for param in group:
-                                    assert param.grad is None
-                        print()
+                        try:
+                            self.tied_model._exec_instr(**cmd.kwargs)
+                        except Exception as e:
+                            assert False, f"'exec_backward_pass' raised an exception {e}"
+                        return
                     else:
                         self.tied_model._exec_instr(**cmd.kwargs)
-            break
+
+    def test__exec_backward_pass(self):
+        self.set_up_tied_model(zero_stage=1, enable_bf16=1)
+        self._execute_instructions()
+
+        self.set_up_tied_model(zero_stage=0, enable_bf16=1)
+        self._execute_instructions()
+
