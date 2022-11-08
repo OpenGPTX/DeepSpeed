@@ -396,7 +396,7 @@ class TestBF16Training(DistributedTest):
 
         self.model = deepspeed_model
 
-    def set_up_tied_model(self):
+    def set_up_tied_model(self, zero_stage: int):
         config_dict = {
             "train_batch_size": 2,
             "steps_per_print": 1,
@@ -404,7 +404,7 @@ class TestBF16Training(DistributedTest):
                 "enabled": True
             },
             "zero_optimization": {
-                "stage": 1
+                "stage": zero_stage
             },
             "communication_data_type": "fp32"
         }
@@ -438,7 +438,6 @@ class TestBF16Training(DistributedTest):
         self.tied_model = deepspeed_model
         self.tied_model.set_dataloader(self.data_loader)
 
-
     def _check_params(self):
         params = list(self.model.parameters())
 
@@ -459,7 +458,8 @@ class TestBF16Training(DistributedTest):
         assert (self.model.communication_data_type == torch.float32)
 
     def test__exec_reduce_tied_grads(self):
-        self.set_up_tied_model()
+        # self.set_up_tied_model(1)
+        self.set_up_tied_model(1)
         for n, batch in enumerate(self.data_loader):
             self.tied_model.module.train()
             self.tied_model.total_loss = None
@@ -496,6 +496,48 @@ class TestBF16Training(DistributedTest):
                         weight_group_list = self.tied_model.module.get_tied_weights_and_groups()
                         for weight, group in weight_group_list:
                             assert weight.grad.dtype == torch.bfloat16
+                    else:
+                        self.tied_model._exec_instr(**cmd.kwargs)
+            break
+
+    def test__exec_backward_pass(self):
+        self.set_up_tied_model(0)
+        for n, batch in enumerate(self.data_loader):
+            self.tied_model.module.train()
+            self.tied_model.total_loss = None
+            self.tied_model._compute_loss = True
+
+            # Do the work
+            self.tied_model.timers("train_batch").start()
+
+            sched = schedule.TrainSchedule(
+                micro_batches=self.tied_model.micro_batches,
+                stages=self.tied_model.num_stages,
+                stage_id=self.tied_model.stage_id,
+            )
+            # Reserve and reset buffers.
+            self.tied_model._reserve_pipe_buffers(sched.num_pipe_buffers())
+            self.tied_model.fwd_outputs = []
+            for step_cmds in sched:
+                # For each instruction in the step
+                for cmd in step_cmds:
+                    if type(cmd) not in self.tied_model._INSTRUCTION_MAP:
+                        raise RuntimeError(
+                            f"{self.__class__.__name__} does not understand instruction {repr(cmd)}"
+                        )
+
+                    # Equivalent to: self._exec_forward_pass(buffer_id=0)
+                    self.tied_model._exec_instr = MethodType(self.tied_model._INSTRUCTION_MAP[type(cmd)],
+                                                             self.tied_model)
+                    if type(cmd) == schedule.BackwardPass:
+                        # check the gradient data types before and after executing ReduceTiedGrads
+                        # during the execution it is not possible to access the gradients
+                        self.tied_model._exec_instr(**cmd.kwargs)
+                        if not self.tied_model.is_last_stage():
+                            for group in self.tied_model.optimizer.bf16_groups:
+                                for param in group:
+                                    assert param.grad is None
+                        print()
                     else:
                         self.tied_model._exec_instr(**cmd.kwargs)
             break
