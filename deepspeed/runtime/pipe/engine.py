@@ -264,6 +264,7 @@ class PipelineEngine(DeepSpeedEngine):
                 grad = weight._hp_grad if self.bfloat16_enabled() else weight.grad
 
             is_bfloat = False
+            # Make sure that we perform the computations in float32 when using bf16
             if grad.dtype == torch.bfloat16:
                 is_bfloat = True
                 grad = grad.to(torch.float32)
@@ -815,6 +816,7 @@ class PipelineEngine(DeepSpeedEngine):
             part_grad = None
             # print(f'RANK={self.global_rank} BEFORE-BWD restored grad={self.grad_layer[0].size()} {self.grad_layer[1].size()}')
 
+        # When using ZeRO stage 1, we employ the DeepSpeedZeroOptimizer optimizer which doesn't provide clear_lp_grads()
         if not self.zero_optimization() and self.bfloat16_enabled() and not self.is_last_stage():
             # manually call because we don't call optimizer.backward()
             self.optimizer.clear_lp_grads()
@@ -828,6 +830,8 @@ class PipelineEngine(DeepSpeedEngine):
             torch.autograd.backward(tensors=(outputs,), grad_tensors=(grad_tensors,))
 
         if (
+            # When using ZeRO stage 1 is used, we employ the DeepSpeedZeroOptimizer which has not the functions
+            # update_hp_grads()
             not self.zero_optimization()
             and self.bfloat16_enabled()
             and not self.is_last_stage()
@@ -851,12 +855,14 @@ class PipelineEngine(DeepSpeedEngine):
     def _exec_load_micro_batch(self, buffer_id):
         if self.wall_clock_breakdown():
             self.timers("batch_input").start()
-
+        # OPENGPT-X:  (input, target), where input is a tuple
+        # (tokens, position_ids, attention_mask), (labels, loss_mask)
         batch = self._next_batch()
 
         if self.is_first_stage():
             loaded = None
             if torch.is_tensor(batch[0]):
+                # OPENGPT-X: why cloning?
                 loaded = batch[0].clone().to(self.device).detach()
                 loaded.requires_grad = loaded.is_floating_point()
             else:
