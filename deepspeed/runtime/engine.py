@@ -818,6 +818,7 @@ class DeepSpeedEngine(Module):
         elif self.fp16_enabled():
             return torch.float16
         elif self.bfloat16_enabled():
+            # Communicate in torch.float32 since bf16 communication is not available for NCCL-version < 2.10.3
             return torch.float32
 
         return torch.float32
