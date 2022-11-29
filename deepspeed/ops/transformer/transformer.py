@@ -7,7 +7,7 @@ import torch
 from torch import nn
 from torch.autograd import Function
 
-from ..op_builder import TransformerBuilder, StochasticTransformerBuilder
+from op_builder import TransformerBuilder, StochasticTransformerBuilder
 
 # Cuda modules will be imported if needed
 transformer_cuda_module = None
